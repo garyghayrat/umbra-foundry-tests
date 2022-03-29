@@ -5,6 +5,10 @@ pragma solidity ^0.7.6;
 contract UmbraRouter {
   address internal constant umbra = 0xFb2dc580Eed955B528407b4d36FfaFe3da685401;
 
+
+  function gm() public returns(string memory) {
+    return "gm";
+  }
   /**
    * @notice Batch send ETH and token payments to a stealth address
    * @param _receivers Stealth addresses receiving the payment
@@ -35,10 +39,12 @@ contract UmbraRouter {
           _pkxes[i],
           _ciphertexts[i]
         );
-        require(ethBalance >= _amounts[i]);
-        ethBalance -= _amounts[i];
+        uint256 amount = _amounts[i];
+        require(ethBalance >= amount);
+        ethBalance -= amount;
 
-        (bool success, bytes memory data) = umbra.call{value: _amounts[i]}(payload);
+        (bool success, bytes memory data) = umbra.call{value: amount}(payload);
+        require(success, "umbra delegate call failed");
 
       } else {
         payload = abi.encodeWithSignature(
