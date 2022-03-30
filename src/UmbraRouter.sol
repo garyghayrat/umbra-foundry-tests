@@ -1,64 +1,96 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.7.6;
+pragma solidity ^0.8.13;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+  interface IUmbra {
+    function sendEth(address payable receiver, uint256 tollCommitment, bytes32 pkx, bytes32 ciphertext) external payable;
+    function sendToken(address receiver, address tokenAddr, uint256 amount, bytes32 pkx, bytes32 ciphertext) external payable;
+  }
 
 contract UmbraRouter {
   address internal constant umbra = 0xFb2dc580Eed955B528407b4d36FfaFe3da685401;
 
-
-  function gm() public returns(string memory) {
-    return "gm";
+  struct SendEth {
+    address payable receiver;
+    uint256 amount;
+    bytes32 pkx;
+    bytes32 ciphertext;
   }
-  /**
-   * @notice Batch send ETH and token payments to a stealth address
-   * @param _receivers Stealth addresses receiving the payment
-   * @param _tokenAddrs Addresses of the ERC20 tokens being sent
-   * @param _tollCommitments Exact toll the sender is paying; should equal contract toll;
-   * the committment is used to prevent frontrunning attacks by the owner;
-   * see https://github.com/ScopeLift/umbra-protocol/issues/54 for more information
-   * @param _pkxes X-coordinate of the ephemeral public key used to encrypt the payload
-   * @param _ciphertexts Encrypted entropy (used to generated the stealth address) and payload extension
-   */
-  function batchSend(
-    address payable[] calldata _receivers,
-    address[] calldata _tokenAddrs,
-    uint256[] calldata _amounts,
-    uint256[] calldata _tollCommitments,
-    bytes32[] calldata _pkxes,
-    bytes32[] calldata _ciphertexts
-  ) external payable {
-    bytes memory payload;
-    uint ethBalance = msg.value;
 
-    for (uint256 i = 0; i < _receivers.length; i++) {
-      if (_tokenAddrs[i] == address(0x0)) {
-        payload = abi.encodeWithSignature(
-          "sendEth(address,uint256,bytes32,bytes32)",
-          _receivers[i],
-          _tollCommitments[i],
-          _pkxes[i],
-          _ciphertexts[i]
-        );
-        uint256 amount = _amounts[i];
-        require(ethBalance >= amount);
-        ethBalance -= amount;
+  struct SendToken {
+    address receiver;
+    address tokenAddr;
+    uint256 amount;
+    bytes32 pkx;
+    bytes32 ciphertext;
+  }
 
-        (bool success, bytes memory data) = umbra.call{value: amount}(payload);
-        require(success, "umbra delegate call failed");
+  function batchSendEth(
+    uint256 _tollCommitment, 
+    SendEth[] calldata _params
+    ) public payable {
 
-      } else {
-        payload = abi.encodeWithSignature(
-          "sendToken(address,address,uint256,bytes32,bytes32)",
-          _receivers[i],
-          _tokenAddrs[i],
-          _amounts[i],
-          _pkxes[i],
-          _ciphertexts[i]
-        );
+      uint balance = msg.value;
 
-        (bool success, bytes memory data) = umbra.delegatecall(payload);
-        require(success && (data.length == 0 || abi.decode(data, (bool))), "DELEGATECALL_FAILED");
-      }
+      for (uint256 i = 0; i < _params.length; i++) {
+        //amount to be sent per receiver
+        uint256 _amount = _params[i].amount;
+        require(balance >= _amount, "not enough msg.value");
+        balance -= _amount;
+
+          bytes memory data = abi.encodeWithSelector(
+            IUmbra.sendEth.selector, 
+            _params[i].receiver, 
+            _tollCommitment, 
+            _params[i].pkx, 
+            _params[i].ciphertext);
+
+          (bool success, ) = umbra.call{value: _amount}(data);
+          require(success, "sendEth call failed");
     }
+  }
+
+  function batchSendTokens(
+    uint256 _tollCommitment,
+    SendToken[] calldata _params
+  ) public payable {
+
+    for (uint256 i = 0; i < _params.length; i++) {
+      uint256 _amount = _params[i].amount;
+      address _tokenAddr = _params[i].tokenAddr;
+      IERC20 token = IERC20(address(_tokenAddr));
+
+      //User needs to approve router address as spender first
+      token.transferFrom(msg.sender, address(this), _amount);
+
+      if(token.allowance(address(this), umbra) == 0) { 
+      token.approve(umbra, type(uint256).max);
+      }
+
+      // token.transferFrom(address(this), umbra, _amount);
+      bytes memory data = abi.encodeWithSelector(
+            IUmbra.sendToken.selector,
+            _params[i].receiver,
+            _params[i].tokenAddr, 
+            _amount,
+            _params[i].pkx, 
+            _params[i].ciphertext);
+      
+      (bool success, ) = umbra.call(data);
+      require(success, "sendToken call failed");
+    }  
+  }
+
+  function batchSend(
+    uint256 _tollCommitment,
+    SendEth[] calldata _ethParams,
+    SendToken[] calldata _tokenParams
+    ) external payable {
+
+      batchSendEth(_tollCommitment, _ethParams);
+      batchSendTokens(_tollCommitment, _tokenParams);
+
   }
 }
