@@ -2,219 +2,222 @@
 pragma solidity ^0.8.13;
 
 import "ds-test/test.sol";
-import "../UmbraBatchSend.sol";
 import "forge-std/Vm.sol";
+import "forge-std/stdlib.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-// import "../../abi/Umbra.sol";
+import "../UmbraBatchSend.sol";
+
+contract UmbraBatchSendTest is DSTest, stdCheats {
+    using stdStorage for StdStorage;
+    StdStorage stdstore;
+
+    UmbraBatchSend public router = new UmbraBatchSend();
+
+    string constant umbraArtifact = 'artifacts/Umbra.json';
+    string constant testArtifact = 'out/UmbraBatchSend.t.sol/UmbraBatchSendTest.json';
+    string constant testArtifact2 = 'out/UmbraBatchSend.sol/UmbraBatchSend.json';
 
 
-contract UmbraRouterTest is DSTest {
-    UmbraBatchSend public router;
     address umbra = 0xFb2dc580Eed955B528407b4d36FfaFe3da685401;
     address myAddr = 0xb607a2c7F78aA1d7e39a54F7c2Ee6f4d208acCA4;
     address receiver = 0xdF8d4537B9D40AA15b0D75AE45727d6A53fA46A5;
     address Dai = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
 
+    address alice = address(0x202204);
+    address bob = address(0x202205);
+
+
+
     Vm vm = Vm(HEVM_ADDRESS);
-
-
-    string constant umbraArtifact = 'abi/Umbra.json';
-
-
     bytes payload;
 
-    // address receiver = myAddr;
     uint public tollCommitment;
     bytes32 test = "test";
 
     UmbraBatchSend.SendEth newSendEth;
-    UmbraBatchSend.SendEth[] sendeth;
+    UmbraBatchSend.SendEth[] sendEth;
     
     UmbraBatchSend.SendToken newSendToken;
     UmbraBatchSend.SendToken[] sendToken;
 
-    uint256 amount;
-    uint256 amount2;
-    uint256 amount3;
-
-    IERC20 token;
+    IERC20 token = IERC20(address(Dai));
 
     function setUp() public {
 
-        router = new UmbraBatchSend();
+        vm.label(alice, "Alice");
+        vm.label(bob, "Bob");
+        vm.label(address(this), "TestContract");
 
-        bytes memory bytecode = abi.encodePacked(vm.getCode(umbraArtifact));
-        address umbraClone;
+        // address umbraClone = deployCode(umbraArtifact);
+        // emit log_named_address("umbraClone address is ", umbraClone);
+
+         stdstore
+            .target(Dai)
+            .sig(IERC20(token).balanceOf.selector)
+            .with_key(address(this))
+            .checked_write(1000*1e18);
+    }
+
+    function testDeployCode() public {
+        address deployed = deployCode(testArtifact, bytes(""));
+        emit log_named_address("deployed address is", deployed);
+        assertEq(string(getCode(deployed)), string(getCode(address(this))));
+    }
+
+    function testUmbraDeploy() public {
+        address deployed = deployCode("UmbraBatchSend.sol:UmbraBatchSend", bytes(""));
+        emit log_named_address("deployed address is", deployed);
+        // assertEq(string(getCode(deployed)), string(getCode(address(this))));
+    }
+
+    function getCode(address who) internal view returns (bytes memory o_code) {
         assembly {
-        umbraClone := create(0, add(bytecode, 0x20), mload(bytecode))
+            // retrieve the size of the code, this needs assembly
+            let size := extcodesize(who)
+            // allocate output byte array - this could also be done without assembly
+            // by using o_code = new bytes(size)
+            o_code := mload(0x40)
+            // new "memory end" including padding
+            mstore(0x40, add(o_code, and(add(add(size, 0x20), 0x1f), not(0x1f))))
+            // store length in memory
+            mstore(o_code, size)
+            // actually retrieve the code, this needs assembly
+            extcodecopy(who, add(o_code, 0x20), 0, size)
         }
-
-        amount = 1000;
-        amount2 = 0.5 ether;
-        amount3 = 1 ether;
-
-        newSendEth = UmbraBatchSend.SendEth(payable(receiver), amount3, test, test);
-
-        sendeth.push(UmbraBatchSend.SendEth(payable(myAddr), amount2, test, test));
-        sendeth.push(newSendEth);
-
-        newSendToken = UmbraBatchSend.SendToken(receiver, address(Dai), amount, test, test);
-        sendToken.push(newSendToken);
-        sendToken.push(UmbraBatchSend.SendToken(myAddr, address(Dai), amount, test, test));
-        sendToken.push(UmbraBatchSend.SendToken(address(0), address(Dai), amount + 1000, test, test));
-
-
-        token = IERC20(address(Dai));
-    }
-
-//     function testSendEth() public {
-
-//  //       receivers.push(myAddr);
-
-//         // emit log_named_address("addr in array is", receivers[0]);
-
-//         payload = abi.encodeWithSignature(
-//           "sendEth(address,uint256,bytes32,bytes32)",
-//           myAddr,
-//           tollCommitment,
-//           pkxes,
-//           ciphertexts
-//         );        
-//         // payable(myAddr).transfer(1 ether);
-//         // vm.prank(myAddr);
-//         (bool success, ) = umbra.call{value: 1 ether}(payload);
-//         require(success, "call wasn't successful");
-//      //   assertTrue(success, "call failed");
-//         emit log_named_uint("account balance after call is", myAddr.balance);
-
-//         // router.batchSend([payable(receiver), payable(address(0))], [address(0x0)], [0.01 ether], [0], [empty], [empty]);
-//     }
-
-    function testSendToken() public {
-
-
-      bytes memory data = abi.encodeWithSelector(
-            IUmbra.sendToken.selector,
-            receiver,
-            Dai, 
-            1000,
-            test, 
-            test);
-
-        // emit log_named_uint("account balance before call is", previousBal);
-        // emit log_named_uint("receiver balance before call is", previousBal2);
-
-        emit log_named_uint("This caller's dai balance is", token.balanceOf(address(this)));
-
-
-
-        // vm.startPrank(myAddr);
-        // token.approve(address(this), 1000);
-        // vm.stopPrank();
-
-        // token.transferFrom(myAddr, address(this), 1000);
-
-        vm.startPrank(address(myAddr));
-
-        token.transfer(address(this), 2000);
-        // vm.stopPrank(); //check if this is necessary
-
-        emit log_named_address("this address is ", address(this));
-        emit log_named_uint("This caller's dai balance is now", token.balanceOf(address(this)));
-        emit log_named_uint("myAddr dai balance is now", token.balanceOf(myAddr));
-        emit log_named_uint("Umbra dai balance is now", token.balanceOf(umbra));
-
- 
-        token.approve(umbra, type(uint256).max);
-  //      token.transfer(receiver, 1000);
-        (bool success, ) = umbra.call(data);
-        require(success, "call failed");
-        emit log_named_uint("Receiver dai balance is now", token.balanceOf(receiver));
-        emit log_named_uint("Umbra dai balance is now", token.balanceOf(umbra));
-
-        // require(success, "call wasn't successful");
-
-    }
- 
+    }    
 
     function testBatchSendEth() public {
-        uint previousBal = myAddr.balance;
-        uint previousBal2 = receiver.balance;
-        emit log_named_uint("account balance before call is", myAddr.balance);
-        emit log_named_uint("receiver account balance before call is", receiver.balance);
-        emit log_named_uint("router contract balance before call is", address(router).balance);
+
+        uint alicePrevBal = alice.balance;
+        uint bobPrevBal = bob.balance;
 
         uint amount = 1 ether;
+        uint amount2 = 2 ether;
         uint256 toll = 0;        
-        router.batchSendEth{value: 1.5 ether}(toll, sendeth);
 
-        assertEq(myAddr.balance, (previousBal + sendeth[0].amount));
-        assertEq(receiver.balance, (previousBal2 + sendeth[1].amount));
-        emit log("router batchSend successful...now...");
-        emit log_named_uint("account balance after call is", myAddr.balance);
-        emit log_named_uint("receiver account balance after call is", receiver.balance);
-        emit log_named_uint("router contract balance after call is", address(router).balance);
+        sendEth.push(UmbraBatchSend.SendEth(payable(alice), amount, test, test));
+        sendEth.push(UmbraBatchSend.SendEth(payable(bob), amount2, test, test));
+        router.batchSendEth{value: amount + amount2}(toll, sendEth);
+
+        assertEq(alice.balance, alicePrevBal + amount);
+        assertEq(bob.balance, bobPrevBal + amount2);
 
     }
 
-    function testFuzz_BatchSendEth(uint amount) public {
-        uint previousBal = myAddr.balance;
-        uint previousBal2 = receiver.balance;
-        emit log_named_uint("account balance before call is", myAddr.balance);
-        emit log_named_uint("receiver account balance before call is", receiver.balance);
-        emit log_named_uint("router contract balance before call is", address(router).balance);
+    function testFuzz_BatchSendEth(uint8 amount, uint8 amount2, bytes32 testBytes) public {
 
-        vm.assume(amount > 0);
-        // uint amount = 1 ether;
-        sendeth.push(UmbraBatchSend.SendEth(payable(myAddr), amount, test, test));
-        uint256 toll = 0;        
-        router.batchSendEth{value: 1.5 ether + amount}(toll, sendeth);
+        uint alicePrevBal = alice.balance;
+        uint bobPrevBal = bob.balance;
+        vm.assume(amount > 0 && amount < type(uint8).max/2);
+        vm.assume(amount2 > 0 && amount2 < type(uint8).max/2);
+        
 
-        assertEq(myAddr.balance, (previousBal + sendeth[0].amount));
-        assertEq(receiver.balance, (previousBal2 + sendeth[1].amount));
-        emit log("router batchSend successful...now...");
-        emit log_named_uint("account balance after call is", myAddr.balance);
-        emit log_named_uint("receiver account balance after call is", receiver.balance);
-        emit log_named_uint("router contract balance after call is", address(router).balance);
-
-    }
-
-        function testBatchSendTokens() public {
-        uint previousBal = token.balanceOf(myAddr);
-        uint previousBal2 = token.balanceOf(receiver);
-        emit log_named_uint("account balance before call is", previousBal);
-        emit log_named_uint("receiver balance before call is", previousBal2);
-
-        emit log_named_uint("This caller's dai balance is", token.balanceOf(address(this)));
-
-        vm.startPrank(myAddr);
-        token.approve(address(this), 4000);
-        vm.stopPrank();
-
-        token.transferFrom(myAddr, address(this), 4000);
-        emit log_named_uint("This caller's dai balance is now", token.balanceOf(address(this)));
-        emit log_named_uint("This caller's dai allowance", token.allowance(address(router), address(umbra)));
-        emit log_named_uint("myAddr dai balance is now", token.balanceOf(myAddr));
-        emit log_named_uint("Umbra dai balance is now", token.balanceOf(umbra));
-
-
-        // token.approve(umbra, 1000);
-
-        uint amount = 1 ether;
         uint256 toll = 0;
-        // token.approve(address(router), 1000);
-              token.approve(address(router), type(uint256).max);
-            //   token.transfer(address(router), 1000);
-        
-        router.batchSendTokens{value: toll}(toll, sendToken);
-        emit log_named_uint("This caller's dai allowance", token.allowance(address(router), address(umbra)));
 
-        emit log_named_uint("sendToken receiver amount is ", sendToken[0].amount);
-        emit log_named_uint("This caller's dai balance is now", token.balanceOf(address(this)));
-        emit log_named_uint("Umbra dai balance is now", token.balanceOf(umbra));
-        
+        sendEth.push(UmbraBatchSend.SendEth(payable(alice), amount, testBytes, testBytes));
+        sendEth.push(UmbraBatchSend.SendEth(payable(bob), amount2, testBytes, testBytes));
 
+        uint totalAmount = amount + amount2;
 
+        router.batchSendEth{value: totalAmount}(toll, sendEth);
+
+        assertEq(alice.balance, alicePrevBal + amount);
+        assertEq(bob.balance, bobPrevBal + amount2);
 
     }
+
+    function testBatchSendTokens() public {
+
+        assertTrue(token.balanceOf(address(this)) > 0, "caller's dai balance is zero");
+
+        uint256 toll = 0;
+        uint umbraPrevBal = token.balanceOf(umbra);
+
+        sendToken.push(UmbraBatchSend.SendToken(alice, Dai, 1000, test, test));
+        sendToken.push(UmbraBatchSend.SendToken(bob, Dai, 500, test, test));
+        token.approve(address(router), 1500);
+
+        router.batchSendTokens{value: toll}(toll, sendToken);
+        assertEq(token.balanceOf(umbra), umbraPrevBal + 1500);
+
+    }
+
+    function testFuzz_BatchSendTokens(uint8 amount, uint8 amount2) public {
+
+        assertTrue(token.balanceOf(address(this)) > 0, "caller's dai balance is zero");
+
+        vm.assume(amount < type(uint8).max/2);
+        vm.assume(amount2 < type(uint8).max/2);
+
+        uint256 toll = 0;
+        uint umbraPrevBal = token.balanceOf(umbra);
+
+        sendToken.push(UmbraBatchSend.SendToken(alice, Dai, amount, test, test));
+        sendToken.push(UmbraBatchSend.SendToken(bob, Dai, amount2, test, test));
+        token.approve(address(router), amount + amount2);
+
+        router.batchSendTokens{value: toll}(toll, sendToken);
+        assertEq(token.balanceOf(umbra), umbraPrevBal + amount + amount2);
+
+    }
+
+    function testBatchSend() public {
+
+        uint alicePrevBal = alice.balance;
+        uint bobPrevBal = bob.balance;
+
+        uint amount = 1 ether;
+        uint amount2 = 2 ether;
+        uint total = amount + amount2;
+        uint256 toll = 0;        
+
+        sendEth.push(UmbraBatchSend.SendEth(payable(alice), amount, test, test));
+        sendEth.push(UmbraBatchSend.SendEth(payable(bob), amount2, test, test));
+
+        //tokens
+        assertTrue(token.balanceOf(address(this)) > 0, "caller's dai balance is zero");
+
+        uint umbraPrevBal = token.balanceOf(umbra);
+
+        sendToken.push(UmbraBatchSend.SendToken(alice, Dai, 1000, test, test));
+        sendToken.push(UmbraBatchSend.SendToken(bob, Dai, 500, test, test));
+        token.approve(address(router), 1500);
+
+        router.batchSend{value: total + toll}(toll, sendEth, sendToken);
+
+        assertEq(alice.balance, alicePrevBal + amount);
+        assertEq(bob.balance, bobPrevBal + amount2);
+
+        assertEq(token.balanceOf(umbra), umbraPrevBal + 1500);
+
+    }
+
+    function testFuzz_BatchSend(uint8 amount, uint8 amount2, bytes32 testBytes) public {
+
+        uint alicePrevBal = alice.balance;
+        uint bobPrevBal = bob.balance;
+        uint umbraPrevBal = token.balanceOf(umbra);
+        vm.assume(amount > 0 && amount < type(uint8).max/2);
+        vm.assume(amount2 > 0 && amount2 < type(uint8).max/2);
+        assertTrue(token.balanceOf(address(this)) > 0, "caller's dai balance is zero");
+
+        uint256 toll = 0;
+        uint totalAmount = amount + amount2;
+
+        sendEth.push(UmbraBatchSend.SendEth(payable(alice), amount, testBytes, testBytes));
+        sendEth.push(UmbraBatchSend.SendEth(payable(bob), amount2, testBytes, testBytes));
+
+        sendToken.push(UmbraBatchSend.SendToken(alice, Dai, amount, test, test));
+        sendToken.push(UmbraBatchSend.SendToken(bob, Dai, amount2, test, test));
+        token.approve(address(router), amount + amount2);
+
+        router.batchSend{value: totalAmount + toll}(toll, sendEth, sendToken);
+
+        assertEq(alice.balance, alicePrevBal + amount);
+        assertEq(bob.balance, bobPrevBal + amount2);
+
+        assertEq(token.balanceOf(umbra), umbraPrevBal + amount + amount2);
+
+    }
+
 }
